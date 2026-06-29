@@ -143,7 +143,13 @@ async function fetchSheetJSON(sheetName) {
         return data.table.rows.map(row => {
             const obj = {};
             (row.c || []).forEach((cell, i) => {
-                if (cols[i]) obj[cols[i]] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : '';
+                if (!cols[i]) return;
+                let val = '';
+                if (cell) {
+                    if (cell.v !== null && cell.v !== undefined) val = cell.v;
+                    else if (cell.f !== null && cell.f !== undefined) val = cell.f; // text trong cột số
+                }
+                obj[cols[i]] = val;
             });
             return obj;
         }).filter(r => Object.values(r).some(v => v !== ''));
@@ -168,6 +174,67 @@ async function findSheet(names, validate) {
     return null;
 }
 
+// CSV parser thủ công — đọc đúng cả text lẫn số trong cùng cột (tránh lỗi gviz/tq JSON)
+function parseCSV(text) {
+    const results = [];
+    let i = 0;
+    while (i < text.length) {
+        const row = [];
+        while (i < text.length && text[i] !== '\n' && text[i] !== '\r') {
+            if (text[i] === '"') {
+                let val = '';
+                i++; // bỏ dấu " mở
+                while (i < text.length) {
+                    if (text[i] === '"' && text[i+1] === '"') { val += '"'; i += 2; }
+                    else if (text[i] === '"') { i++; break; }
+                    else val += text[i++];
+                }
+                row.push(val);
+            } else {
+                let start = i;
+                while (i < text.length && text[i] !== ',' && text[i] !== '\n' && text[i] !== '\r') i++;
+                row.push(text.slice(start, i));
+            }
+            if (text[i] === ',') i++;
+        }
+        if (text[i] === '\r') i++;
+        if (text[i] === '\n') i++;
+        if (row.some(v => v.trim())) results.push(row);
+    }
+    return results;
+}
+
+async function fetchSheetCSVRaw(sheetName) {
+    // Dùng gviz/tq CSV (trả đúng tên sheet, export URL có thể trả sai tab)
+    const gvizUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+    try {
+        const res  = await fetch(gvizUrl);
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<')) return null;
+        const rows = parseCSV(text);
+        if (rows.length < 2) return null;
+        const headers = rows[0];
+        const data = rows.slice(1).map(r => {
+            const obj = {};
+            headers.forEach((h, i) => {
+                // Cột có tên → dùng tên; cột trống → dùng key _colN để không mất dữ liệu
+                const key = h.trim() || `_col${i}`;
+                obj[key] = r[i] ?? '';
+            });
+            return obj;
+        }).filter(r => Object.values(r).some(v => String(v).trim()));
+        return data.length > 0 ? data : null;
+    } catch (e) { return null; }
+}
+
+async function findSheetCSV(names, validate) {
+    for (const name of names) {
+        const rows = await fetchSheetCSVRaw(name);
+        if (rows && rows.length > 0 && validate(rows)) return rows;
+    }
+    return null;
+}
+
 // ═══════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════
@@ -187,10 +254,18 @@ function col(row, ...names) {
 
 function parseSize(name) {
     if (!name) return '';
-    const m = String(name).match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*[""]|1(?!\/))/);
-    if (!m) return '';
-    const s = m[0].trim().replace(/[""]/, '"');
-    return (s === '1' || s === '1"') ? '1"' : s;
+    const s = String(name);
+    // Size dạng thập phân NgoàixTrong — ví dụ: 8.5x13, 6.5x10 (kiểm tra TRƯỚC phân số)
+    const md = s.match(/\d+\.\d+[xX×]\d+/);
+    if (md) return md[0].toLowerCase();
+    // Size phân số tiêu chuẩn (1/8, 1/4, 3/8, 1/2, 5/8, 3/4, 1")
+    // 1(?![\d/]) → "1" đứng một mình (không phải "13", "1/2"...)
+    const mf = s.match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*[""]|(?<!\d)1(?![\d\/]))/);
+    if (mf) {
+        const sz = mf[0].trim().replace(/[""]/, '"');
+        return (sz === '1' || sz === '1"') ? '1"' : sz;
+    }
+    return '';
 }
 
 // Excel auto-converts fractions (1/2, 1/8...) thành ngày → cần giải mã lại
@@ -216,7 +291,7 @@ window.addEventListener('DOMContentLoaded', async () => {
             findSheet(SHEET_NAMES.ong,    isOngSheet),
             findSheet(SHEET_NAMES.ren,    isRenSheet),
             findSheet(SHEET_NAMES.voAo,   isVoAoSheet),
-            findSheet(SHEET_NAMES.bam,    isBamSheet),
+            findSheetCSV(SHEET_NAMES.bam,  isBamSheet), // dùng CSV để đọc đúng "10 rãnh ngang"
             findSheet(SHEET_NAMES.caiDat, isCaiDatSheet),
         ]);
 
@@ -349,18 +424,31 @@ function tinhToan() {
         console.log('BAM hit for', ongName, '→', hit ? Object.values(hit).slice(0,3) : 'NOT FOUND');
 
         if (hit) {
-            // Đọc khuôn và chỉnh số theo tên cột hoặc vị trí
             const vals = Object.values(hit);
-            const keys = Object.keys(hit);
             const findCol = (...pats) => {
                 for (const [k, v] of Object.entries(hit)) {
-                    const kn = k.normalize('NFC').toLowerCase();
-                    if (pats.some(p => kn.includes(p)) && v !== '') return String(v);
+                    const kn = k.normalize('NFC').toLowerCase().replace(/\s/g,'');
+                    if (pats.some(p => kn.includes(p)) && String(v).trim()) return String(v);
                 }
                 return '';
             };
-            tsKhuon   = findCol('khu') || String(vals[1] ?? '--');
-            tsChinhSo = findCol('chỉnh','chinh','số','so') || String(vals[2] ?? '--');
+            // KhuonText (cột D) ưu tiên hơn Khuôn (cột B kiểu số - text bị mất)
+            // Hỗ trợ cả khi cột D có tên "KhuonText" lẫn khi không có tên (lưu là _col3)
+            const khuonText = findCol('khuontext') || (() => {
+                for (const [k, v] of Object.entries(hit)) {
+                    if (k.startsWith('_col') && String(v).trim()) return String(v);
+                }
+                return '';
+            })();
+            const khuonNum  = (() => {
+                for (const [k, v] of Object.entries(hit)) {
+                    const kn = k.normalize('NFC').toLowerCase().replace(/\s/g,'');
+                    if ((kn === 'khuôn' || kn === 'khuon') && String(v).trim()) return String(v);
+                }
+                return '';
+            })();
+            tsKhuon   = khuonText || khuonNum || String(vals[1] ?? '--');
+            tsChinhSo = findCol('chỉnh','chinh','chinhso') || String(vals[2] ?? '--');
         }
     }
 
