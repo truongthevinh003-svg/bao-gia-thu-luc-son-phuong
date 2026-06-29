@@ -5,11 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sơn Phượng - Báo Giá Thủy Lực</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; }
         .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
-        #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.9);
+        #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.92);
             z-index:999; align-items:center; justify-content:center; flex-direction:column; gap:14px; }
     </style>
 </head>
@@ -26,10 +25,8 @@
         <p class="text-gray-500 text-sm">Hệ Thống Báo Giá & Thông Số Bấm Ống Thủy Lực</p>
     </header>
 
-    <!-- Lỗi -->
     <div id="errorBar" class="hidden mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-semibold"></div>
 
-    <!-- 2 cột ngang -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         <div id="inputControls" class="card p-5 border border-gray-100 hidden space-y-4">
@@ -106,116 +103,124 @@
 </div>
 
 <script>
-// ══════════════════════════════════════════════════════
-// SHEET ID – lấy từ link Google Sheets của bạn
-// ══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════
+// SHEET ID – lấy từ link Google Sheets
+// ═══════════════════════════════════════════
 const SHEET_ID = "1Q7TcIXEAtG6MCUdfN3lzViA4xdWpwTVl";
 
-// Thứ tự thử tên tab (thử lần lượt đến khi ra đúng dữ liệu)
+// Tên tab trong Google Sheets (thử lần lượt)
 const SHEET_NAMES = {
-    ong:    ['ONG', 'ỐNG', 'Ong', 'Sheet1'],
-    ren:    ['REN', 'Ren', 'Sheet2'],
-    voAo:   ['VOAO', 'VO_AO', 'VoAo', 'Sheet3'],
-    bam:    ['BAM', 'Bam', 'Sheet4'],
-    caiDat: ['CAI_DAT', 'CAIDAT', 'Sheet5'],
+    ong:    ['ONG', 'ỐNG', 'Ong'],
+    ren:    ['REN', 'Ren'],
+    voAo:   ['VOAO', 'VO_AO', 'VoAo'],
+    bam:    ['BAM', 'Bam'],
+    caiDat: ['CAI_DAT', 'CAIDAT'],
 };
-
-// Validator – kiểm tra dữ liệu đúng loại
-// Dùng VALUE của cột đầu tiên, không dùng tên cột (tránh nhầm với CAI_DAT)
-const isOngData   = rows => rows.length > 1 && rows.some(r => {
-    const v = String(Object.values(r)[0] || '').normalize('NFC');
-    return /[oôồốổỗộ]ng/i.test(v) && v.length > 4 && !/HE_SO|CONG_BAM/i.test(v);
-});
-const isRenData   = rows => rows.length > 1 && rows.some(r => {
-    const v = String(Object.values(r)[1] || Object.values(r)[0] || '').normalize('NFC');
-    return /ren|đ[aầ]u|ly\s|bspp|bsp/i.test(v);
-});
-const isVoAoData  = rows => rows.length > 0 && !isOngData(rows) &&
-    Object.keys(rows[0]).some(k => /v[oỏ]|áo|ao/i.test(k.normalize('NFC')));
-const isBamData   = rows => rows.length > 1 &&
-    Object.keys(rows[0]).some(k => /khu[oô]n|bấm|bam/i.test(k.normalize('NFC')));
-const isCaiDat    = rows => rows.length > 0 &&
-    String(Object.values(rows[0])[0] || '').includes('HE_SO');
-
-const VALIDATORS = {
-    ong:    isOngData,
-    ren:    isRenData,
-    voAo:   isVoAoData,
-    bam:    isBamData,
-    caiDat: isCaiDat,
-};
-
-// ══════════════════════════════════════════════════════
 
 let DATA   = { ong: [], ren: [], voAo: [], bam: [] };
 let CONFIG = { HE_SO_ONG: 2, HE_SO_REN: 2, HE_SO_VOAO: 1, CONG_BAM: 60000 };
 
-function getVal(row, ...names) {
+// ═══════════════════════════════════════════
+// Fetch dữ liệu từ Google Sheets qua JSON API
+// Dùng JSON thay CSV để tránh lỗi ký tự " trong tên ống
+// ═══════════════════════════════════════════
+
+async function fetchSheetJSON(sheetName) {
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheetName)}`;
+    try {
+        const res  = await fetch(url);
+        const text = await res.text();
+        if (!text || text.trim().startsWith('<')) return null;
+
+        // Strip JSONP wrapper: /*O_o*/\ngoogle.visualization.Query.setResponse({...});
+        const m = text.match(/google\.visualization\.Query\.setResponse\(([\s\S]*)\)\s*;?\s*$/);
+        if (!m) return null;
+
+        const data = JSON.parse(m[1]);
+        if (!data || data.status !== 'ok' || !data.table) return null;
+
+        const cols = data.table.cols.map(c => (c.label || c.id || '').trim());
+        return data.table.rows.map(row => {
+            const obj = {};
+            (row.c || []).forEach((cell, i) => {
+                if (cols[i]) obj[cols[i]] = (cell && cell.v !== null && cell.v !== undefined) ? cell.v : '';
+            });
+            return obj;
+        }).filter(r => Object.values(r).some(v => v !== ''));
+    } catch (e) {
+        console.error('fetchSheetJSON error:', sheetName, e);
+        return null;
+    }
+}
+
+// Kiểm tra đúng sheet hay không
+const isOngSheet    = rows => rows.length > 0 && rows.some(r => /\d[\/]\d|AT|lớp|SP|SH|thủy|thắng/i.test(String(Object.values(r)[0]||'')));
+const isRenSheet    = rows => rows.length > 0 && rows.some(r => /ly\b|ren|bspp|đầu/i.test(String(Object.values(r)[1]||Object.values(r)[0]||'')));
+const isVoAoSheet   = rows => rows.length > 0 && Object.keys(rows[0]).some(k => /v[oỏ]|áo/i.test(k));
+const isBamSheet    = rows => rows.length > 0 && Object.keys(rows[0]).some(k => /khu[oô]n|bấm|bam/i.test(k));
+const isCaiDatSheet = rows => rows.length > 0 && /HE_SO|CONG/i.test(String(Object.values(rows[0])[0]||''));
+
+async function findSheet(names, validate) {
     for (const name of names) {
-        const v = row[name];
-        if (v !== undefined && v !== "") return String(v);
-    }
-    for (const [k, v] of Object.entries(row)) {
-        if (names.some(n => k.normalize('NFC').toLowerCase() === n.normalize('NFC').toLowerCase()) && v !== "")
-            return String(v);
-    }
-    return "";
-}
-
-function parseSize(name) {
-    if (!name) return "";
-    const m = name.match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*"|1(?!\/))/);
-    if (!m) return "";
-    const s = m[0].trim();
-    return (s === "1" || s === '1"') ? '1"' : s;
-}
-
-function setLoading(on) {
-    document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none';
-}
-
-function showError(msg) {
-    const el = document.getElementById('errorBar');
-    el.innerHTML = `❌ ${msg}`;
-    el.classList.remove('hidden');
-}
-
-// ── Fetch từng sheet ──────────────────────────────────
-
-async function fetchCSV(sheetName) {
-    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    const res  = await fetch(url);
-    const text = await res.text();
-    if (!text || text.trim().startsWith('<')) return null;
-    const wb = XLSX.read(text, { type: 'string' });
-    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-}
-
-async function findSheet(variants, validator) {
-    for (const name of variants) {
-        const rows = await fetchCSV(name);
-        if (rows && validator(rows)) return rows;
+        const rows = await fetchSheetJSON(name);
+        if (rows && rows.length > 0 && validate(rows)) return rows;
     }
     return null;
 }
 
-// ── Boot ──────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════
+
+function col(row, ...names) {
+    for (const n of names) {
+        if (row[n] !== undefined && row[n] !== '') return String(row[n]);
+    }
+    // Fuzzy match (NFC + lowercase)
+    for (const [k, v] of Object.entries(row)) {
+        const kn = k.normalize('NFC').toLowerCase();
+        if (names.some(n => kn === n.normalize('NFC').toLowerCase()) && v !== '')
+            return String(v);
+    }
+    return '';
+}
+
+function parseSize(name) {
+    if (!name) return '';
+    const m = String(name).match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*[""]|1(?!\/))/);
+    if (!m) return '';
+    const s = m[0].trim().replace(/[""]/, '"');
+    return (s === '1' || s === '1"') ? '1"' : s;
+}
+
+// Excel auto-converts fractions (1/2, 1/8...) thành ngày → cần giải mã lại
+function excelSerialToFraction(val) {
+    if (typeof val !== 'number' || val < 1000) return String(val || '');
+    // Excel serial → UTC date → "M/D" fraction
+    const d = new Date((Math.floor(val) - 25569) * 86400 * 1000);
+    return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+}
+
+function normUp(s) {
+    return String(s).trim().toUpperCase().normalize('NFC');
+}
+
+// ═══════════════════════════════════════════
+// Boot: tải dữ liệu khi mở trang
+// ═══════════════════════════════════════════
 
 window.addEventListener('DOMContentLoaded', async () => {
-    setLoading(true);
+    document.getElementById('loadingOverlay').style.display = 'flex';
     try {
-        const [ong, ren, voAo, bam, caiDatRows] = await Promise.all([
-            findSheet(SHEET_NAMES.ong,    VALIDATORS.ong),
-            findSheet(SHEET_NAMES.ren,    VALIDATORS.ren),
-            findSheet(SHEET_NAMES.voAo,   VALIDATORS.voAo),
-            findSheet(SHEET_NAMES.bam,    VALIDATORS.bam),
-            findSheet(SHEET_NAMES.caiDat, VALIDATORS.caiDat),
+        const [ong, ren, voAo, bam, caiDat] = await Promise.all([
+            findSheet(SHEET_NAMES.ong,    isOngSheet),
+            findSheet(SHEET_NAMES.ren,    isRenSheet),
+            findSheet(SHEET_NAMES.voAo,   isVoAoSheet),
+            findSheet(SHEET_NAMES.bam,    isBamSheet),
+            findSheet(SHEET_NAMES.caiDat, isCaiDatSheet),
         ]);
 
-        if (!ong) throw new Error(
-            'Không đọc được sheet ỐNG.<br>' +
-            '→ Mở Google Sheets → double-click tab <b>"ỐNG"</b> → đổi thành <b>"ONG"</b> → Enter → F5 trang này.'
-        );
+        if (!ong) throw new Error('Không đọc được sheet ONG. Tab Google Sheets phải đặt tên "ONG".');
         if (!ren) throw new Error('Không đọc được sheet REN.');
 
         DATA.ong  = ong;
@@ -223,26 +228,32 @@ window.addEventListener('DOMContentLoaded', async () => {
         DATA.voAo = voAo || [];
         DATA.bam  = bam  || [];
 
-        (caiDatRows || []).forEach(row => {
-            const k = String(Object.values(row)[0] || '').trim();
-            const v = String(Object.values(row)[1] || '');
-            if (k && v && !isNaN(parseFloat(v))) CONFIG[k] = parseFloat(v);
+        (caiDat || []).forEach(r => {
+            const k = String(Object.values(r)[0] || '').trim();
+            const v = parseFloat(String(Object.values(r)[1] || ''));
+            if (k && !isNaN(v)) CONFIG[k] = v;
         });
 
+        console.log('✅ Loaded ONG:', DATA.ong.length, 'REN:', DATA.ren.length, 'BAM:', DATA.bam.length);
+        console.log('BAM data:', DATA.bam.map(b => Object.values(b).slice(0,3)));
         initUI();
     } catch (err) {
-        showError(err.message || String(err));
+        document.getElementById('errorBar').innerHTML = '❌ ' + err.message;
+        document.getElementById('errorBar').classList.remove('hidden');
+        console.error(err);
     }
-    setLoading(false);
+    document.getElementById('loadingOverlay').style.display = 'none';
 });
 
-// ── UI ────────────────────────────────────────────────
+// ═══════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════
 
 function initUI() {
     const sel = document.getElementById('ongSelect');
-    sel.innerHTML = "";
+    sel.innerHTML = '';
     DATA.ong.forEach(o => {
-        const ten = getVal(o,'Loại ống','Loai ong','ten') || String(Object.values(o)[0]||'');
+        const ten = col(o, 'Loại ống', 'Loai ong', 'ten') || String(Object.values(o)[0] || '');
         if (ten) sel.add(new Option(ten, ten));
     });
     document.getElementById('inputControls').classList.remove('hidden');
@@ -252,90 +263,114 @@ function initUI() {
 
 function loadRenOptions() {
     const ongName = document.getElementById('ongSelect').value;
-    const sz = parseSize(ongName).replace(/"/g,'').trim();
+    const sz = parseSize(ongName).replace(/[""]/, '').replace('"', '').trim();
+
     const r1 = document.getElementById('ren1Select');
     const r2 = document.getElementById('ren2Select');
     const p1 = r1.value, p2 = r2.value;
-    r1.innerHTML = ""; r2.innerHTML = "";
+    r1.innerHTML = ''; r2.innerHTML = '';
 
     let list = DATA.ren.filter(r => {
-        const coOng  = getVal(r,'Cỡ ống','Co ong','Size') || String(Object.values(r)[0]||'');
-        const rSz    = parseSize(coOng).replace(/"/g,'').trim();
-        return sz && rSz && rSz === sz;
+        const raw = col(r, 'Cỡ ống', 'Co ong', 'Size') || Object.values(r)[0] || '';
+        const co  = excelSerialToFraction(raw);  // giải mã serial ngày → phân số
+        const rsz = parseSize(co).replace(/[""]/, '').replace('"', '').trim();
+        return sz && rsz && rsz === sz;
     });
     if (!list.length) list = DATA.ren;
 
     list.forEach(r => {
-        const name = getVal(r,'Đầu ren','Dau ren','ten') || String(Object.values(r)[1]||'');
-        if (name) { r1.add(new Option(name,name)); r2.add(new Option(name,name)); }
+        const name = col(r, 'Đầu ren', 'Dau ren', 'ten') || String(Object.values(r)[1] || '');
+        if (name) { r1.add(new Option(name, name)); r2.add(new Option(name, name)); }
     });
 
-    if ([...r1.options].some(o=>o.value===p1)) r1.value=p1;
-    if ([...r2.options].some(o=>o.value===p2)) r2.value=p2;
+    if ([...r1.options].some(o => o.value === p1)) r1.value = p1;
+    if ([...r2.options].some(o => o.value === p2)) r2.value = p2;
     tinhToan();
 }
 
-// ── Tính toán ─────────────────────────────────────────
+// ═══════════════════════════════════════════
+// Tính toán giá + thông số bấm
+// ═══════════════════════════════════════════
 
 function tinhToan() {
     if (!DATA.ong.length) return;
+
     const ongName  = document.getElementById('ongSelect').value;
     const ren1Name = document.getElementById('ren1Select').value;
     const ren2Name = document.getElementById('ren2Select').value;
     const met      = parseFloat(document.getElementById('metInput').value) || 0;
     if (!ongName || !ren1Name || !ren2Name) return;
 
-    const ong = DATA.ong.find(o =>
-        (getVal(o,'Loại ống','Loai ong','ten')||String(Object.values(o)[0]||'')) === ongName) || {};
-    const giaVonOng = parseFloat(getVal(ong,'Giá vốn/m','Gia von/m','gia')||String(Object.values(ong)[1]||0)) || 0;
-    const tenVoAo   = getVal(ong,'Vỏ áo','Vo ao','vo') || String(Object.values(ong)[2]||'');
+    // Lấy giá ống
+    const ongRow = DATA.ong.find(o => (col(o,'Loại ống','Loai ong','ten') || String(Object.values(o)[0]||'')) === ongName) || {};
+    const gVonOng  = parseFloat(col(ongRow,'Giá vốn/m','Gia von/m') || String(Object.values(ongRow)[1]||0)) || 0;
+    const tenVoAo  = col(ongRow,'Vỏ áo','Vo ao') || String(Object.values(ongRow)[2]||'');
 
-    let giaVonVoAo = 0;
+    // Vỏ áo
+    let gVonVoAo = 0;
     if (tenVoAo && DATA.voAo.length) {
-        const va = DATA.voAo.find(v=>(getVal(v,'Vỏ áo','Vo ao')||String(Object.values(v)[0]||''))===tenVoAo);
-        if (va) giaVonVoAo = parseFloat(getVal(va,'Giá vốn','Gia von')||String(Object.values(va)[1]||0)) || 0;
+        const va = DATA.voAo.find(v => (col(v,'Vỏ áo','Vo ao')||String(Object.values(v)[0]||'')) === tenVoAo);
+        if (va) gVonVoAo = parseFloat(col(va,'Giá vốn','Gia von')||String(Object.values(va)[1]||0)) || 0;
     }
 
-    const fr = n => DATA.ren.find(r=>(getVal(r,'Đầu ren','Dau ren','ten')||String(Object.values(r)[1]||''))===n)||{};
-    const gvr1 = parseFloat(getVal(fr(ren1Name),'Giá vốn','Gia von')||String(Object.values(fr(ren1Name))[2]||0)) || 0;
-    const gvr2 = parseFloat(getVal(fr(ren2Name),'Giá vốn','Gia von')||String(Object.values(fr(ren2Name))[2]||0)) || 0;
+    // Ren
+    const findRen = n => DATA.ren.find(r => (col(r,'Đầu ren','Dau ren','ten')||String(Object.values(r)[1]||'')) === n) || {};
+    const gVonR1 = parseFloat(col(findRen(ren1Name),'Giá vốn','Gia von')||String(Object.values(findRen(ren1Name))[2]||0)) || 0;
+    const gVonR2 = parseFloat(col(findRen(ren2Name),'Giá vốn','Gia von')||String(Object.values(findRen(ren2Name))[2]||0)) || 0;
 
-    // Thông số bấm
-    let tsKhuon="--", tsChinhSo="--";
+    // ════ Thông số bấm ════
+    let tsKhuon = '--', tsChinhSo = '--';
+
     if (DATA.bam.length) {
-        const norm = s => s.toString().trim().toUpperCase().normalize('NFC');
-        const bn   = b => norm(getVal(b,'Loại ống','Loai ong','Tên ống','Ten ong','Loại','Loai')||String(Object.values(b)[0]||''));
-        let hit = DATA.bam.find(b => bn(b) === norm(ongName));
+        // Lấy tên ống trong BAM (cột đầu tiên hoặc cột 'Loại ống')
+        const bamName = b => normUp(col(b,'Loại ống','Loai ong','Tên ống','Ten ong') || String(Object.values(b)[0]||''));
+
+        // Bước 1: So khớp chính xác (case-insensitive, NFC)
+        let hit = DATA.bam.find(b => bamName(b) === normUp(ongName));
+
+        // Bước 2: So khớp size + loại (AT/SP/SH)
         if (!hit) {
-            const sk = parseSize(ongName).replace(/"/g,'').trim();
-            const tm = ongName.match(/(4SP|4SH|4AT|2AT|1AT|4\s*L[ỚớÔô]P|2\s*L[ỚớÔô]P|1\s*L[ỚớÔô]P)/i);
-            const tk = tm ? tm[0].replace(/\s+/g,'').toUpperCase().normalize('NFC') : "";
-            if (sk) hit = DATA.bam.find(b => {
-                const n = bn(b);
-                return n.includes(sk.normalize('NFC')) && (!tk || n.replace(/\s+/g,'').includes(tk));
-            });
-            if (!hit && sk) hit = DATA.bam.find(b => bn(b).includes(sk.normalize('NFC')));
+            const sk = parseSize(ongName).replace(/[""\s]/g,'');  // "1/2" → "1/2"
+            const tm = ongName.match(/(4SP|4SH|4AT|2AT|1AT)/i);
+            const tk = tm ? tm[0].toUpperCase() : '';
+            console.log('BAM step2: size=', sk, 'type=', tk);
+            if (sk) {
+                hit = DATA.bam.find(b => {
+                    const bn = bamName(b).replace(/[""\s]/g,'');
+                    return bn.includes(sk) && (!tk || bn.includes(tk));
+                });
+            }
+            // Bước 3: Chỉ theo size
+            if (!hit && sk) {
+                hit = DATA.bam.find(b => bamName(b).replace(/[""\s]/g,'').includes(sk));
+            }
         }
+
+        console.log('BAM hit for', ongName, '→', hit ? Object.values(hit).slice(0,3) : 'NOT FOUND');
+
         if (hit) {
-            const fk = (row,...pats) => {
-                for (const [k,v] of Object.entries(row)) {
+            // Đọc khuôn và chỉnh số theo tên cột hoặc vị trí
+            const vals = Object.values(hit);
+            const keys = Object.keys(hit);
+            const findCol = (...pats) => {
+                for (const [k, v] of Object.entries(hit)) {
                     const kn = k.normalize('NFC').toLowerCase();
-                    if (pats.some(p=>kn.includes(p.normalize('NFC').toLowerCase())) && v!=="") return String(v);
+                    if (pats.some(p => kn.includes(p)) && v !== '') return String(v);
                 }
-                return "";
+                return '';
             };
-            const ks = Object.keys(hit);
-            tsKhuon   = fk(hit,'khu') || hit[ks[1]] || "--";
-            tsChinhSo = fk(hit,'chỉnh','chinh') || fk(hit,'số','so') || hit[ks[2]] || "--";
+            tsKhuon   = findCol('khu') || String(vals[1] ?? '--');
+            tsChinhSo = findCol('chỉnh','chinh','số','so') || String(vals[2] ?? '--');
         }
     }
 
     document.getElementById('khuonDisplay').innerText   = tsKhuon;
     document.getElementById('chinhSoDisplay').innerText = tsChinhSo;
 
-    const gOng  = giaVonOng * met * CONFIG.HE_SO_ONG;
-    const gRen  = (gvr1 + gvr2) * CONFIG.HE_SO_REN;
-    const gVo   = giaVonVoAo * 2 * CONFIG.HE_SO_VOAO;
+    // Tính giá
+    const gOng  = gVonOng * met * CONFIG.HE_SO_ONG;
+    const gRen  = (gVonR1 + gVonR2) * CONFIG.HE_SO_REN;
+    const gVo   = gVonVoAo * 2 * CONFIG.HE_SO_VOAO;
     const raw   = gOng + gRen + gVo + CONFIG.CONG_BAM;
     const total = Math.ceil(raw / 5000) * 5000;
 
@@ -356,9 +391,9 @@ function copyBaoGia() {
     if (!window.baoGiaText) return;
     navigator.clipboard.writeText(window.baoGiaText).then(() => {
         const t = document.getElementById('toast');
-        t.classList.remove('translate-y-20','opacity-0');
-        setTimeout(()=>t.classList.add('translate-y-20','opacity-0'), 2500);
-    }).catch(()=>alert("Không thể copy!"));
+        t.classList.remove('translate-y-20', 'opacity-0');
+        setTimeout(() => t.classList.add('translate-y-20', 'opacity-0'), 2500);
+    }).catch(() => alert('Không thể copy!'));
 }
 </script>
 </body>
