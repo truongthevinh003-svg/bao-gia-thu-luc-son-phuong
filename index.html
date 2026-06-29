@@ -9,48 +9,27 @@
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; }
         .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
-        #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.85);
-            z-index:100; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
+        #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.9);
+            z-index:999; align-items:center; justify-content:center; flex-direction:column; gap:14px; }
     </style>
 </head>
 <body class="p-3 md:p-5 min-h-screen">
 
 <div id="loadingOverlay" class="flex">
-    <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-    <p class="text-blue-700 font-bold text-sm">Đang tải dữ liệu từ Google Sheets...</p>
+    <div class="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    <p class="text-blue-700 font-bold">Đang tải dữ liệu...</p>
 </div>
 
 <div class="max-w-7xl mx-auto">
-    <header class="text-center mb-4">
+    <header class="text-center mb-5">
         <h1 class="text-3xl font-black text-blue-900">SƠN PHƯỢNG</h1>
         <p class="text-gray-500 text-sm">Hệ Thống Báo Giá & Thông Số Bấm Ống Thủy Lực</p>
     </header>
 
-    <div id="setupCard" class="card p-5 mb-4 border border-blue-100 hidden">
-        <p class="text-sm font-bold text-gray-700 mb-1">🔗 Kết nối Google Sheets</p>
-        <p class="text-xs text-gray-500 mb-3">
-            Dán link Google Sheets vào đây. Sheet cần được chia sẻ <b>"Anyone with the link – Viewer"</b>.<br>
-            Tên các tab sheet phải là: <b>ONG, REN, VOAO, BAM, CAI_DAT</b>
-            <span class="text-orange-600">(đổi "ỐNG" → "ONG" trong Google Sheets nếu cần)</span>
-        </p>
-        <div class="flex gap-2">
-            <input id="ggUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."
-                class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50">
-            <button onclick="connectSheets()"
-                class="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 whitespace-nowrap">
-                Kết nối
-            </button>
-        </div>
-        <div id="setupError" class="hidden mt-2 text-xs text-red-600 font-semibold"></div>
-    </div>
+    <!-- Lỗi -->
+    <div id="errorBar" class="hidden mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700 font-semibold"></div>
 
-    <div id="connectedBar" class="hidden mb-4 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between text-sm">
-        <span class="text-green-700 font-semibold">✅ Đang dùng dữ liệu từ Google Sheets</span>
-        <button onclick="disconnect()" class="text-xs text-gray-400 hover:text-red-500 underline">Đổi sheet khác</button>
-    </div>
-
-    <div id="errorBar" class="hidden mb-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-semibold"></div>
-
+    <!-- 2 cột ngang -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         <div id="inputControls" class="card p-5 border border-gray-100 hidden space-y-4">
@@ -127,25 +106,48 @@
 </div>
 
 <script>
-const HARDCODED_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1Q7TcIXEAtG6MCUdfN3lzViA4xdWpwTVl";
+// ══════════════════════════════════════════════════════
+// SHEET ID – lấy từ link Google Sheets của bạn
+// ══════════════════════════════════════════════════════
+const SHEET_ID = "1Q7TcIXEAtG6MCUdfN3lzViA4xdWpwTVl";
 
+// Thứ tự thử tên tab (thử lần lượt đến khi ra đúng dữ liệu)
 const SHEET_NAMES = {
-    ong:    ['ONG', 'ỐNG', 'Ong', 'ong'],
-    ren:    ['REN', 'Ren', 'ren'],
-    voAo:   ['VOAO', 'VoAo', 'voao', 'VO_AO'],
-    bam:    ['BAM', 'Bam', 'bam'],
-    caiDat: ['CAI_DAT', 'CAIDAT', 'CaiDat', 'cai_dat'],
+    ong:    ['ONG', 'ỐNG', 'Ong', 'Sheet1'],
+    ren:    ['REN', 'Ren', 'Sheet2'],
+    voAo:   ['VOAO', 'VO_AO', 'VoAo', 'Sheet3'],
+    bam:    ['BAM', 'Bam', 'Sheet4'],
+    caiDat: ['CAI_DAT', 'CAIDAT', 'Sheet5'],
 };
+
+// Validator – kiểm tra dữ liệu đúng loại
+// Dùng VALUE của cột đầu tiên, không dùng tên cột (tránh nhầm với CAI_DAT)
+const isOngData   = rows => rows.length > 1 && rows.some(r => {
+    const v = String(Object.values(r)[0] || '').normalize('NFC');
+    return /[oôồốổỗộ]ng/i.test(v) && v.length > 4 && !/HE_SO|CONG_BAM/i.test(v);
+});
+const isRenData   = rows => rows.length > 1 && rows.some(r => {
+    const v = String(Object.values(r)[1] || Object.values(r)[0] || '').normalize('NFC');
+    return /ren|đ[aầ]u|ly\s|bspp|bsp/i.test(v);
+});
+const isVoAoData  = rows => rows.length > 0 && !isOngData(rows) &&
+    Object.keys(rows[0]).some(k => /v[oỏ]|áo|ao/i.test(k.normalize('NFC')));
+const isBamData   = rows => rows.length > 1 &&
+    Object.keys(rows[0]).some(k => /khu[oô]n|bấm|bam/i.test(k.normalize('NFC')));
+const isCaiDat    = rows => rows.length > 0 &&
+    String(Object.values(rows[0])[0] || '').includes('HE_SO');
 
 const VALIDATORS = {
-    ong:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /lo[aạ]i|[oô]ng/i.test(k.normalize('NFC'))),
-    ren:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /ren|đ[aầ]u/i.test(k.normalize('NFC'))),
-    voAo:   rows => rows.length > 0,
-    bam:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /khu[oô]n|bấm|bam/i.test(k.normalize('NFC'))),
-    caiDat: rows => rows.length > 0,
+    ong:    isOngData,
+    ren:    isRenData,
+    voAo:   isVoAoData,
+    bam:    isBamData,
+    caiDat: isCaiDat,
 };
 
-let DATA = { ong: [], ren: [], voAo: [], bam: [] };
+// ══════════════════════════════════════════════════════
+
+let DATA   = { ong: [], ren: [], voAo: [], bam: [] };
 let CONFIG = { HE_SO_ONG: 2, HE_SO_REN: 2, HE_SO_VOAO: 1, CONG_BAM: 60000 };
 
 function getVal(row, ...names) {
@@ -168,50 +170,52 @@ function parseSize(name) {
     return (s === "1" || s === '1"') ? '1"' : s;
 }
 
+function setLoading(on) {
+    document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none';
+}
+
 function showError(msg) {
     const el = document.getElementById('errorBar');
-    el.innerText = '❌ ' + msg;
+    el.innerHTML = `❌ ${msg}`;
     el.classList.remove('hidden');
 }
 
-function hideError() { document.getElementById('errorBar').classList.add('hidden'); }
-function setLoading(on) { document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none'; }
+// ── Fetch từng sheet ──────────────────────────────────
 
-function extractSheetId(url) {
-    const m = url.match(/\/d\/([a-zA-Z0-9\-_]+)/);
-    return m ? m[1] : null;
-}
-
-async function fetchSheetByName(sheetId, sheetName) {
-    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    const res = await fetch(url);
+async function fetchCSV(sheetName) {
+    const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+    const res  = await fetch(url);
     const text = await res.text();
-    if (text.trim().startsWith('<')) return null;
+    if (!text || text.trim().startsWith('<')) return null;
     const wb = XLSX.read(text, { type: 'string' });
     return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
 }
 
-async function fetchSheet(sheetId, variants, validator) {
+async function findSheet(variants, validator) {
     for (const name of variants) {
-        const rows = await fetchSheetByName(sheetId, name);
+        const rows = await fetchCSV(name);
         if (rows && validator(rows)) return rows;
     }
     return null;
 }
 
-async function loadSheetsData(sheetId) {
+// ── Boot ──────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded', async () => {
     setLoading(true);
-    hideError();
     try {
         const [ong, ren, voAo, bam, caiDatRows] = await Promise.all([
-            fetchSheet(sheetId, SHEET_NAMES.ong,    VALIDATORS.ong),
-            fetchSheet(sheetId, SHEET_NAMES.ren,    VALIDATORS.ren),
-            fetchSheet(sheetId, SHEET_NAMES.voAo,   VALIDATORS.voAo),
-            fetchSheet(sheetId, SHEET_NAMES.bam,    VALIDATORS.bam),
-            fetchSheet(sheetId, SHEET_NAMES.caiDat, VALIDATORS.caiDat),
+            findSheet(SHEET_NAMES.ong,    VALIDATORS.ong),
+            findSheet(SHEET_NAMES.ren,    VALIDATORS.ren),
+            findSheet(SHEET_NAMES.voAo,   VALIDATORS.voAo),
+            findSheet(SHEET_NAMES.bam,    VALIDATORS.bam),
+            findSheet(SHEET_NAMES.caiDat, VALIDATORS.caiDat),
         ]);
 
-        if (!ong) throw new Error('Không đọc được sheet ONG. Đổi tên tab thành "ONG" trong Google Sheets.');
+        if (!ong) throw new Error(
+            'Không đọc được sheet ỐNG.<br>' +
+            '→ Mở Google Sheets → double-click tab <b>"ỐNG"</b> → đổi thành <b>"ONG"</b> → Enter → F5 trang này.'
+        );
         if (!ren) throw new Error('Không đọc được sheet REN.');
 
         DATA.ong  = ong;
@@ -219,63 +223,27 @@ async function loadSheetsData(sheetId) {
         DATA.voAo = voAo || [];
         DATA.bam  = bam  || [];
 
-        if (caiDatRows) {
-            caiDatRows.forEach(row => {
-                const k = getVal(row, 'Thông số') || String(Object.values(row)[0] || '');
-                const v = getVal(row, 'Giá trị')  || String(Object.values(row)[1] || '');
-                if (k && v && !isNaN(parseFloat(v))) CONFIG[k.trim()] = parseFloat(v);
-            });
-        }
+        (caiDatRows || []).forEach(row => {
+            const k = String(Object.values(row)[0] || '').trim();
+            const v = String(Object.values(row)[1] || '');
+            if (k && v && !isNaN(parseFloat(v))) CONFIG[k] = parseFloat(v);
+        });
 
         initUI();
-        document.getElementById('connectedBar').classList.remove('hidden');
-        document.getElementById('setupCard').classList.add('hidden');
     } catch (err) {
-        setLoading(false);
-        showError(err.message);
-        document.getElementById('setupCard').classList.remove('hidden');
-        const errEl = document.getElementById('setupError');
-        errEl.innerText = err.message;
-        errEl.classList.remove('hidden');
+        showError(err.message || String(err));
     }
     setLoading(false);
-}
-
-async function connectSheets() {
-    const url = document.getElementById('ggUrl').value.trim();
-    const id = extractSheetId(url);
-    if (!id) {
-        document.getElementById('setupError').innerText = 'URL không hợp lệ.';
-        document.getElementById('setupError').classList.remove('hidden');
-        return;
-    }
-    localStorage.setItem('sp_sheets_url', url);
-    await loadSheetsData(id);
-}
-
-function disconnect() {
-    localStorage.removeItem('sp_sheets_url');
-    document.getElementById('connectedBar').classList.add('hidden');
-    document.getElementById('setupCard').classList.remove('hidden');
-    document.getElementById('inputControls').classList.add('hidden');
-    document.getElementById('outputControls').classList.add('hidden');
-}
-
-window.addEventListener('DOMContentLoaded', async () => {
-    const savedUrl = HARDCODED_SHEETS_URL || localStorage.getItem('sp_sheets_url');
-    if (savedUrl) {
-        const id = extractSheetId(savedUrl);
-        if (id) { await loadSheetsData(id); return; }
-    }
-    document.getElementById('setupCard').classList.remove('hidden');
 });
 
+// ── UI ────────────────────────────────────────────────
+
 function initUI() {
-    const ongSelect = document.getElementById('ongSelect');
-    ongSelect.innerHTML = "";
+    const sel = document.getElementById('ongSelect');
+    sel.innerHTML = "";
     DATA.ong.forEach(o => {
-        const ten = getVal(o, 'Loại ống', 'Loai ong', 'ten') || String(Object.values(o)[0] || '');
-        if (ten) ongSelect.add(new Option(ten, ten));
+        const ten = getVal(o,'Loại ống','Loai ong','ten') || String(Object.values(o)[0]||'');
+        if (ten) sel.add(new Option(ten, ten));
     });
     document.getElementById('inputControls').classList.remove('hidden');
     document.getElementById('outputControls').classList.remove('hidden');
@@ -284,31 +252,33 @@ function initUI() {
 
 function loadRenOptions() {
     const ongName = document.getElementById('ongSelect').value;
-    const sizeRaw = parseSize(ongName).replace(/"/g, '').trim();
+    const sz = parseSize(ongName).replace(/"/g,'').trim();
     const r1 = document.getElementById('ren1Select');
     const r2 = document.getElementById('ren2Select');
     const p1 = r1.value, p2 = r2.value;
     r1.innerHTML = ""; r2.innerHTML = "";
 
-    let filtered = DATA.ren.filter(r => {
-        const coOng   = getVal(r, 'Cỡ ống', 'Co ong', 'Size') || String(Object.values(r)[0] || '');
-        const renSize = parseSize(coOng).replace(/"/g, '').trim();
-        return sizeRaw && renSize && renSize === sizeRaw;
+    let list = DATA.ren.filter(r => {
+        const coOng  = getVal(r,'Cỡ ống','Co ong','Size') || String(Object.values(r)[0]||'');
+        const rSz    = parseSize(coOng).replace(/"/g,'').trim();
+        return sz && rSz && rSz === sz;
     });
-    if (filtered.length === 0) filtered = DATA.ren;
+    if (!list.length) list = DATA.ren;
 
-    filtered.forEach(r => {
-        const name = getVal(r, 'Đầu ren', 'Dau ren', 'ten') || String(Object.values(r)[1] || '');
-        if (name) { r1.add(new Option(name, name)); r2.add(new Option(name, name)); }
+    list.forEach(r => {
+        const name = getVal(r,'Đầu ren','Dau ren','ten') || String(Object.values(r)[1]||'');
+        if (name) { r1.add(new Option(name,name)); r2.add(new Option(name,name)); }
     });
 
-    if ([...r1.options].some(o => o.value === p1)) r1.value = p1;
-    if ([...r2.options].some(o => o.value === p2)) r2.value = p2;
+    if ([...r1.options].some(o=>o.value===p1)) r1.value=p1;
+    if ([...r2.options].some(o=>o.value===p2)) r2.value=p2;
     tinhToan();
 }
 
+// ── Tính toán ─────────────────────────────────────────
+
 function tinhToan() {
-    if (DATA.ong.length === 0) return;
+    if (!DATA.ong.length) return;
     const ongName  = document.getElementById('ongSelect').value;
     const ren1Name = document.getElementById('ren1Select').value;
     const ren2Name = document.getElementById('ren2Select').value;
@@ -316,82 +286,70 @@ function tinhToan() {
     if (!ongName || !ren1Name || !ren2Name) return;
 
     const ong = DATA.ong.find(o =>
-        (getVal(o,'Loại ống','Loai ong','ten') || String(Object.values(o)[0]||'')) === ongName) || {};
-    const giaVonOng = parseFloat(getVal(ong,'Giá vốn/m','Gia von/m','gia') || String(Object.values(ong)[1]||0)) || 0;
+        (getVal(o,'Loại ống','Loai ong','ten')||String(Object.values(o)[0]||'')) === ongName) || {};
+    const giaVonOng = parseFloat(getVal(ong,'Giá vốn/m','Gia von/m','gia')||String(Object.values(ong)[1]||0)) || 0;
     const tenVoAo   = getVal(ong,'Vỏ áo','Vo ao','vo') || String(Object.values(ong)[2]||'');
 
     let giaVonVoAo = 0;
     if (tenVoAo && DATA.voAo.length) {
-        const voAo = DATA.voAo.find(v => (getVal(v,'Vỏ áo','Vo ao') || String(Object.values(v)[0]||'')) === tenVoAo);
-        if (voAo) giaVonVoAo = parseFloat(getVal(voAo,'Giá vốn','Gia von') || String(Object.values(voAo)[1]||0)) || 0;
+        const va = DATA.voAo.find(v=>(getVal(v,'Vỏ áo','Vo ao')||String(Object.values(v)[0]||''))===tenVoAo);
+        if (va) giaVonVoAo = parseFloat(getVal(va,'Giá vốn','Gia von')||String(Object.values(va)[1]||0)) || 0;
     }
 
-    const findRen = name =>
-        DATA.ren.find(r => (getVal(r,'Đầu ren','Dau ren','ten') || String(Object.values(r)[1]||'')) === name) || {};
-    const giaVonRen1 = parseFloat(getVal(findRen(ren1Name),'Giá vốn','Gia von') || String(Object.values(findRen(ren1Name))[2]||0)) || 0;
-    const giaVonRen2 = parseFloat(getVal(findRen(ren2Name),'Giá vốn','Gia von') || String(Object.values(findRen(ren2Name))[2]||0)) || 0;
+    const fr = n => DATA.ren.find(r=>(getVal(r,'Đầu ren','Dau ren','ten')||String(Object.values(r)[1]||''))===n)||{};
+    const gvr1 = parseFloat(getVal(fr(ren1Name),'Giá vốn','Gia von')||String(Object.values(fr(ren1Name))[2]||0)) || 0;
+    const gvr2 = parseFloat(getVal(fr(ren2Name),'Giá vốn','Gia von')||String(Object.values(fr(ren2Name))[2]||0)) || 0;
 
-    let tsKhuon = "--", tsChinhSo = "--";
-    if (DATA.bam && DATA.bam.length > 0) {
+    // Thông số bấm
+    let tsKhuon="--", tsChinhSo="--";
+    if (DATA.bam.length) {
         const norm = s => s.toString().trim().toUpperCase().normalize('NFC');
-        const getBamName = b =>
-            norm(getVal(b,'Loại ống','Loai ong','Tên ống','Ten ong','Loại','Loai') || String(Object.values(b)[0]||''));
-
-        let bamMatch = DATA.bam.find(b => getBamName(b) === norm(ongName));
-
-        if (!bamMatch) {
-            const sizeKey = parseSize(ongName).replace(/"/g,'').trim();
-            const typeM   = ongName.match(/(4SP|4SH|4AT|2AT|1AT|4\s*L[ỚớÔô]P|2\s*L[ỚớÔô]P|1\s*L[ỚớÔô]P)/i);
-            const typeKey = typeM ? typeM[0].replace(/\s+/g,'').toUpperCase().normalize('NFC') : "";
-            if (sizeKey) {
-                bamMatch = DATA.bam.find(b => {
-                    const bn = getBamName(b);
-                    return bn.includes(sizeKey.normalize('NFC')) &&
-                           (!typeKey || bn.replace(/\s+/g,'').includes(typeKey));
-                });
-            }
-            if (!bamMatch && sizeKey)
-                bamMatch = DATA.bam.find(b => getBamName(b).includes(sizeKey.normalize('NFC')));
+        const bn   = b => norm(getVal(b,'Loại ống','Loai ong','Tên ống','Ten ong','Loại','Loai')||String(Object.values(b)[0]||''));
+        let hit = DATA.bam.find(b => bn(b) === norm(ongName));
+        if (!hit) {
+            const sk = parseSize(ongName).replace(/"/g,'').trim();
+            const tm = ongName.match(/(4SP|4SH|4AT|2AT|1AT|4\s*L[ỚớÔô]P|2\s*L[ỚớÔô]P|1\s*L[ỚớÔô]P)/i);
+            const tk = tm ? tm[0].replace(/\s+/g,'').toUpperCase().normalize('NFC') : "";
+            if (sk) hit = DATA.bam.find(b => {
+                const n = bn(b);
+                return n.includes(sk.normalize('NFC')) && (!tk || n.replace(/\s+/g,'').includes(tk));
+            });
+            if (!hit && sk) hit = DATA.bam.find(b => bn(b).includes(sk.normalize('NFC')));
         }
-
-        if (bamMatch) {
-            const findByKey = (row, ...pats) => {
-                for (const [k, v] of Object.entries(row)) {
+        if (hit) {
+            const fk = (row,...pats) => {
+                for (const [k,v] of Object.entries(row)) {
                     const kn = k.normalize('NFC').toLowerCase();
-                    if (pats.some(p => kn.includes(p.normalize('NFC').toLowerCase())) && v !== "")
-                        return String(v);
+                    if (pats.some(p=>kn.includes(p.normalize('NFC').toLowerCase())) && v!=="") return String(v);
                 }
                 return "";
             };
-            const keys = Object.keys(bamMatch);
-            tsKhuon   = findByKey(bamMatch,'khu') || bamMatch[keys[1]] || "--";
-            tsChinhSo = findByKey(bamMatch,'chỉnh','chinh') ||
-                        findByKey(bamMatch,'số','so') ||
-                        bamMatch[keys[2]] || "--";
+            const ks = Object.keys(hit);
+            tsKhuon   = fk(hit,'khu') || hit[ks[1]] || "--";
+            tsChinhSo = fk(hit,'chỉnh','chinh') || fk(hit,'số','so') || hit[ks[2]] || "--";
         }
     }
 
     document.getElementById('khuonDisplay').innerText   = tsKhuon;
     document.getElementById('chinhSoDisplay').innerText = tsChinhSo;
 
-    const giaOngBan   = giaVonOng * met * CONFIG.HE_SO_ONG;
-    const giaRenBan   = (giaVonRen1 + giaVonRen2) * CONFIG.HE_SO_REN;
-    const giaVoAoBan  = giaVonVoAo * 2 * CONFIG.HE_SO_VOAO;
-    const giaBanRaw   = giaOngBan + giaRenBan + giaVoAoBan + CONFIG.CONG_BAM;
-    const giaBaoKhach = Math.ceil(giaBanRaw / 5000) * 5000;
+    const gOng  = giaVonOng * met * CONFIG.HE_SO_ONG;
+    const gRen  = (gvr1 + gvr2) * CONFIG.HE_SO_REN;
+    const gVo   = giaVonVoAo * 2 * CONFIG.HE_SO_VOAO;
+    const raw   = gOng + gRen + gVo + CONFIG.CONG_BAM;
+    const total = Math.ceil(raw / 5000) * 5000;
 
-    document.getElementById('ketQua').innerText = `${giaBaoKhach.toLocaleString('vi-VN')} đ`;
+    document.getElementById('ketQua').innerText = `${total.toLocaleString('vi-VN')} đ`;
     document.getElementById('chiTiet').innerHTML = `
-        <div class="flex justify-between border-b pb-1.5"><span>1. Tiền Ống:</span><b>${giaOngBan.toLocaleString('vi-VN')} đ</b></div>
-        <div class="flex justify-between border-b pb-1.5"><span>2. Đầu ren (2 cái):</span><b>${giaRenBan.toLocaleString('vi-VN')} đ</b></div>
-        <div class="flex justify-between border-b pb-1.5"><span>3. Vỏ áo (2 cái):</span><b>${giaVoAoBan.toLocaleString('vi-VN')} đ</b></div>
-        <div class="flex justify-between pt-1"><span>4. Công bấm:</span><b>${CONFIG.CONG_BAM.toLocaleString('vi-VN')} đ</b></div>
-    `;
+        <div class="flex justify-between border-b pb-1.5"><span>1. Tiền Ống:</span><b>${gOng.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between border-b pb-1.5"><span>2. Đầu ren (2 cái):</span><b>${gRen.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between border-b pb-1.5"><span>3. Vỏ áo (2 cái):</span><b>${gVo.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between pt-1"><span>4. Công bấm:</span><b>${CONFIG.CONG_BAM.toLocaleString('vi-VN')} đ</b></div>`;
+
     window.baoGiaText =
         `KIM KHÍ ĐIỆN MÁY SƠN PHƯỢNG\n--- BÁO GIÁ THỦY LỰC ---\n\n` +
         `ỐNG: ${ongName}\nCHIỀU DÀI: ${met} mét\nREN 1: ${ren1Name}\nREN 2: ${ren2Name}\n\n` +
-        `=> TỔNG THÀNH TIỀN: ${giaBaoKhach.toLocaleString('vi-VN')} đ\n` +
-        `(Đã bao gồm công bấm và vỏ áo)\nCảm ơn quý khách!`;
+        `=> TỔNG THÀNH TIỀN: ${total.toLocaleString('vi-VN')} đ\n(Đã bao gồm công bấm và vỏ áo)\nCảm ơn quý khách!`;
 }
 
 function copyBaoGia() {
@@ -399,8 +357,8 @@ function copyBaoGia() {
     navigator.clipboard.writeText(window.baoGiaText).then(() => {
         const t = document.getElementById('toast');
         t.classList.remove('translate-y-20','opacity-0');
-        setTimeout(() => t.classList.add('translate-y-20','opacity-0'), 2500);
-    }).catch(() => alert("Không thể copy!"));
+        setTimeout(()=>t.classList.add('translate-y-20','opacity-0'), 2500);
+    }).catch(()=>alert("Không thể copy!"));
 }
 </script>
 </body>
