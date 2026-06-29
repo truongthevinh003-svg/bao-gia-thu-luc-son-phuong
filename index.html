@@ -7,94 +7,72 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f4f8; }
-        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .tab-btn { transition: all .2s; }
-        .tab-btn.active { background: #1d4ed8; color: white; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,.1); }
+        #loadingOverlay { display:none; position:fixed; inset:0; background:rgba(255,255,255,.85);
+            z-index:100; align-items:center; justify-content:center; flex-direction:column; gap:12px; }
     </style>
 </head>
-<body class="p-3 md:p-5 bg-[#f0f4f8] min-h-screen">
-<div class="max-w-7xl mx-auto">
+<body class="p-3 md:p-5 min-h-screen">
 
-    <header class="text-center mb-5">
-        <h1 class="text-3xl font-black text-blue-900 tracking-tight">SƠN PHƯỢNG</h1>
-        <p class="text-gray-500 text-sm mt-1">Hệ Thống Báo Giá & Thông Số Bấm Ống Thủy Lực</p>
+<div id="loadingOverlay" class="flex">
+    <div class="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    <p class="text-blue-700 font-bold text-sm">Đang tải dữ liệu từ Google Sheets...</p>
+</div>
+
+<div class="max-w-7xl mx-auto">
+    <header class="text-center mb-4">
+        <h1 class="text-3xl font-black text-blue-900">SƠN PHƯỢNG</h1>
+        <p class="text-gray-500 text-sm">Hệ Thống Báo Giá & Thông Số Bấm Ống Thủy Lực</p>
     </header>
 
-    <!-- === NGUỒN DỮ LIỆU === -->
-    <div class="card p-4 mb-4 border border-gray-100">
-        <!-- Tab chọn nguồn -->
-        <div class="flex gap-2 mb-4">
-            <button id="tabGG" class="tab-btn active px-4 py-2 rounded-lg text-sm font-bold border border-blue-300"
-                onclick="switchTab('gg')">
-                🟢 Google Sheets
+    <div id="setupCard" class="card p-5 mb-4 border border-blue-100 hidden">
+        <p class="text-sm font-bold text-gray-700 mb-1">🔗 Kết nối Google Sheets</p>
+        <p class="text-xs text-gray-500 mb-3">
+            Dán link Google Sheets vào đây. Sheet cần được chia sẻ <b>"Anyone with the link – Viewer"</b>.<br>
+            Tên các tab sheet phải là: <b>ONG, REN, VOAO, BAM, CAI_DAT</b>
+            <span class="text-orange-600">(đổi "ỐNG" → "ONG" trong Google Sheets nếu cần)</span>
+        </p>
+        <div class="flex gap-2">
+            <input id="ggUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."
+                class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50">
+            <button onclick="connectSheets()"
+                class="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 whitespace-nowrap">
+                Kết nối
             </button>
-            <button id="tabFile" class="tab-btn px-4 py-2 rounded-lg text-sm font-bold border border-gray-300 text-gray-600"
-                onclick="switchTab('file')">
-                📁 File Excel
-            </button>
         </div>
-
-        <!-- Tab Google Sheets -->
-        <div id="panelGG">
-            <p class="text-xs text-gray-500 mb-2">
-                Dán link Google Sheets vào đây (đã chia sẻ <b>"Anyone with the link"</b>):
-            </p>
-            <div class="flex gap-2">
-                <input id="ggUrlInput" type="text"
-                    placeholder="https://docs.google.com/spreadsheets/d/..."
-                    class="flex-1 p-3 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50">
-                <button onclick="loadFromGoogleSheets()"
-                    class="px-5 py-2 bg-blue-600 text-white rounded-xl font-bold text-sm hover:bg-blue-700 transition whitespace-nowrap">
-                    Tải dữ liệu
-                </button>
-            </div>
-            <p class="text-[10px] text-blue-500 mt-1.5 italic">
-                Sheet cần có đúng tên: <b>ỐNG, REN, VOAO, BAM, CAI_DAT</b>
-            </p>
-        </div>
-
-        <!-- Tab File Excel -->
-        <div id="panelFile" class="hidden">
-            <div class="bg-blue-50 p-4 rounded-xl border-2 border-dashed border-blue-300 text-center hover:bg-blue-100 transition-all">
-                <input type="file" id="fileInput" accept=".xlsx,.xls"
-                    class="w-full text-sm text-gray-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:font-semibold hover:file:bg-blue-700 cursor-pointer">
-                <p class="text-[10px] text-blue-500 mt-1 italic">File cần có sheet: ỐNG, REN, VOAO, BAM, CAI_DAT</p>
-            </div>
-        </div>
-
-        <!-- Trạng thái / Lỗi -->
-        <div id="statusMsg" class="hidden mt-3 p-3 rounded-xl text-sm font-semibold"></div>
+        <div id="setupError" class="hidden mt-2 text-xs text-red-600 font-semibold"></div>
     </div>
 
-    <!-- === NỘI DUNG CHÍNH (2 cột ngang) === -->
+    <div id="connectedBar" class="hidden mb-4 px-4 py-2.5 bg-green-50 border border-green-200 rounded-xl flex items-center justify-between text-sm">
+        <span class="text-green-700 font-semibold">✅ Đang dùng dữ liệu từ Google Sheets</span>
+        <button onclick="disconnect()" class="text-xs text-gray-400 hover:text-red-500 underline">Đổi sheet khác</button>
+    </div>
+
+    <div id="errorBar" class="hidden mb-4 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 font-semibold"></div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-        <!-- CỘT TRÁI: Cấu hình -->
         <div id="inputControls" class="card p-5 border border-gray-100 hidden space-y-4">
             <h2 class="text-base font-black text-gray-800 border-b pb-2 flex items-center gap-2">
                 <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4">
-                    </path>
+                        d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/>
                 </svg>
                 CẤU HÌNH SẢN PHẨM
             </h2>
-
             <div>
                 <label class="block text-xs font-bold text-gray-600 mb-1">Loại Ống Thủy Lực</label>
                 <select id="ongSelect"
                     class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium bg-gray-50 text-sm"
                     onchange="loadRenOptions()"></select>
             </div>
-
             <div>
                 <label class="block text-xs font-bold text-gray-600 mb-1">Chiều dài (mét)</label>
                 <input type="number" id="metInput" value="1" step="0.1" min="0.1"
                     class="w-full p-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-medium bg-gray-50 text-sm"
                     oninput="tinhToan()">
             </div>
-
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">Đầu ren 1</label>
@@ -111,21 +89,9 @@
             </div>
         </div>
 
-        <!-- CỘT PHẢI: Kết quả -->
         <div id="outputControls" class="card p-5 border border-gray-100 hidden flex flex-col space-y-4">
-
-            <!-- Thông số Bấm -->
             <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-2xl">
-                <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-3 flex items-center gap-2">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z">
-                        </path>
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                    </svg>
-                    Thông Số Kỹ Thuật Bấm
-                </h3>
+                <h3 class="text-xs font-bold uppercase tracking-wider text-indigo-700 mb-3">⚙️ Thông Số Kỹ Thuật Bấm</h3>
                 <div class="flex justify-between items-center bg-white p-3 rounded-xl mb-2 shadow-sm">
                     <span class="text-sm font-semibold text-gray-500">Khuôn bấm:</span>
                     <span id="khuonDisplay" class="font-black text-indigo-700 text-xl">--</span>
@@ -135,20 +101,16 @@
                     <span id="chinhSoDisplay" class="font-black text-red-600 text-xl">--</span>
                 </div>
             </div>
-
-            <!-- Giá -->
             <div class="flex-grow bg-gray-50 p-4 rounded-2xl border border-gray-200">
                 <div class="text-xs font-bold text-gray-400 uppercase tracking-wider text-center mb-1">Tổng Tiền Thu Khách</div>
                 <div id="ketQua" class="text-4xl font-black text-red-600 text-center tracking-tighter">0 đ</div>
                 <div id="chiTiet" class="text-sm text-gray-600 mt-4 space-y-2"></div>
             </div>
-
             <button onclick="copyBaoGia()"
                 class="w-full bg-[#0b3d91] text-white py-3 rounded-xl font-bold hover:bg-blue-800 transition shadow-lg active:scale-[0.98] flex justify-center items-center gap-2">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z">
-                    </path>
+                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
                 </svg>
                 Copy Báo Giá Ngay
             </button>
@@ -156,297 +118,290 @@
     </div>
 </div>
 
-<!-- Toast -->
 <div id="toast"
     class="fixed bottom-5 right-5 bg-green-600 text-white px-5 py-3 rounded-xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 z-50 pointer-events-none font-medium">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
     </svg>
-    <span id="toastMessage">Đã copy thành công!</span>
+    <span id="toastMessage">Đã copy!</span>
 </div>
 
 <script>
-    let DATA = { ong: [], ren: [], voAo: [], bam: [] };
-    let CONFIG = { HE_SO_ONG: 2, HE_SO_REN: 2, HE_SO_VOAO: 1, CONG_BAM: 60000 };
+const HARDCODED_SHEETS_URL = "https://docs.google.com/spreadsheets/d/1Q7TcIXEAtG6MCUdfN3lzViA4xdWpwTVl";
 
-    // ── HELPERS ──────────────────────────────────────────────────────────────
+const SHEET_NAMES = {
+    ong:    ['ONG', 'ỐNG', 'Ong', 'ong'],
+    ren:    ['REN', 'Ren', 'ren'],
+    voAo:   ['VOAO', 'VoAo', 'voao', 'VO_AO'],
+    bam:    ['BAM', 'Bam', 'bam'],
+    caiDat: ['CAI_DAT', 'CAIDAT', 'CaiDat', 'cai_dat'],
+};
 
-    function getVal(row, ...names) {
-        for (const name of names) {
-            const v = row[name];
-            if (v !== undefined && v !== "") return String(v);
-        }
-        for (const [k, v] of Object.entries(row)) {
-            const kn = k.normalize('NFC').toLowerCase();
-            if (names.some(n => kn === n.normalize('NFC').toLowerCase()) && v !== "")
-                return String(v);
-        }
-        return "";
+const VALIDATORS = {
+    ong:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /lo[aạ]i|[oô]ng/i.test(k.normalize('NFC'))),
+    ren:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /ren|đ[aầ]u/i.test(k.normalize('NFC'))),
+    voAo:   rows => rows.length > 0,
+    bam:    rows => rows.length > 0 && Object.keys(rows[0]).some(k => /khu[oô]n|bấm|bam/i.test(k.normalize('NFC'))),
+    caiDat: rows => rows.length > 0,
+};
+
+let DATA = { ong: [], ren: [], voAo: [], bam: [] };
+let CONFIG = { HE_SO_ONG: 2, HE_SO_REN: 2, HE_SO_VOAO: 1, CONG_BAM: 60000 };
+
+function getVal(row, ...names) {
+    for (const name of names) {
+        const v = row[name];
+        if (v !== undefined && v !== "") return String(v);
     }
-
-    function parseSize(name) {
-        if (!name) return "";
-        const m = name.match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*"|1(?!\/))/);
-        if (!m) return "";
-        const s = m[0].trim();
-        return (s === "1" || s === '1"') ? '1"' : s;
+    for (const [k, v] of Object.entries(row)) {
+        if (names.some(n => k.normalize('NFC').toLowerCase() === n.normalize('NFC').toLowerCase()) && v !== "")
+            return String(v);
     }
+    return "";
+}
 
-    function showStatus(msg, type = 'error') {
-        const el = document.getElementById('statusMsg');
-        el.className = `mt-3 p-3 rounded-xl text-sm font-semibold ${
-            type === 'ok'   ? 'bg-green-50 text-green-700 border border-green-200' :
-            type === 'load' ? 'bg-blue-50  text-blue-700  border border-blue-200'  :
-                              'bg-red-50   text-red-600   border border-red-200'
-        }`;
-        el.innerText = msg;
-        el.classList.remove('hidden');
+function parseSize(name) {
+    if (!name) return "";
+    const m = name.match(/(1\/8|1\/4|3\/8|1\/2|5\/8|3\/4|1\s*"|1(?!\/))/);
+    if (!m) return "";
+    const s = m[0].trim();
+    return (s === "1" || s === '1"') ? '1"' : s;
+}
+
+function showError(msg) {
+    const el = document.getElementById('errorBar');
+    el.innerText = '❌ ' + msg;
+    el.classList.remove('hidden');
+}
+
+function hideError() { document.getElementById('errorBar').classList.add('hidden'); }
+function setLoading(on) { document.getElementById('loadingOverlay').style.display = on ? 'flex' : 'none'; }
+
+function extractSheetId(url) {
+    const m = url.match(/\/d\/([a-zA-Z0-9\-_]+)/);
+    return m ? m[1] : null;
+}
+
+async function fetchSheetByName(sheetId, sheetName) {
+    const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+    const res = await fetch(url);
+    const text = await res.text();
+    if (text.trim().startsWith('<')) return null;
+    const wb = XLSX.read(text, { type: 'string' });
+    return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+}
+
+async function fetchSheet(sheetId, variants, validator) {
+    for (const name of variants) {
+        const rows = await fetchSheetByName(sheetId, name);
+        if (rows && validator(rows)) return rows;
     }
+    return null;
+}
 
-    // ── TAB ──────────────────────────────────────────────────────────────────
+async function loadSheetsData(sheetId) {
+    setLoading(true);
+    hideError();
+    try {
+        const [ong, ren, voAo, bam, caiDatRows] = await Promise.all([
+            fetchSheet(sheetId, SHEET_NAMES.ong,    VALIDATORS.ong),
+            fetchSheet(sheetId, SHEET_NAMES.ren,    VALIDATORS.ren),
+            fetchSheet(sheetId, SHEET_NAMES.voAo,   VALIDATORS.voAo),
+            fetchSheet(sheetId, SHEET_NAMES.bam,    VALIDATORS.bam),
+            fetchSheet(sheetId, SHEET_NAMES.caiDat, VALIDATORS.caiDat),
+        ]);
 
-    function switchTab(tab) {
-        document.getElementById('panelGG').classList.toggle('hidden', tab !== 'gg');
-        document.getElementById('panelFile').classList.toggle('hidden', tab !== 'file');
-        document.getElementById('tabGG').classList.toggle('active', tab === 'gg');
-        document.getElementById('tabFile').classList.toggle('active', tab === 'file');
-    }
+        if (!ong) throw new Error('Không đọc được sheet ONG. Đổi tên tab thành "ONG" trong Google Sheets.');
+        if (!ren) throw new Error('Không đọc được sheet REN.');
 
-    // ── LOAD TỪ GOOGLE SHEETS ────────────────────────────────────────────────
+        DATA.ong  = ong;
+        DATA.ren  = ren;
+        DATA.voAo = voAo || [];
+        DATA.bam  = bam  || [];
 
-    async function loadFromGoogleSheets() {
-        const url = document.getElementById('ggUrlInput').value.trim();
-        const match = url.match(/\/d\/([a-zA-Z0-9\-_]+)/);
-        if (!match) {
-            showStatus('❌ URL không hợp lệ. Hãy copy link từ Google Sheets (File > Share > Copy link).');
-            return;
-        }
-        const sheetId = match[1];
-        showStatus('⏳ Đang tải dữ liệu từ Google Sheets...', 'load');
-
-        try {
-            const fetchCSV = async (sheetName) => {
-                const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-                const res = await fetch(csvUrl);
-                const text = await res.text();
-                // Kiểm tra Google trả về lỗi HTML thay vì CSV
-                if (text.trim().startsWith('<') || text.includes('ServiceLogin')) {
-                    throw new Error(`Sheet "${sheetName}" không đọc được. Kiểm tra tên sheet và quyền chia sẻ.`);
-                }
-                const wb = XLSX.read(text, { type: 'string' });
-                return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-            };
-
-            DATA.ong  = await fetchCSV('ỐNG');
-            DATA.ren  = await fetchCSV('REN');
-            DATA.voAo = await fetchCSV('VOAO');
-            DATA.bam  = await fetchCSV('BAM');
-            const caiDatRaw = await fetchCSV('CAI_DAT');
-
-            if (DATA.ong.length === 0) throw new Error('Sheet ỐNG trống hoặc không tìm thấy.');
-            if (DATA.ren.length === 0) throw new Error('Sheet REN trống hoặc không tìm thấy.');
-
-            caiDatRaw.forEach(row => {
+        if (caiDatRows) {
+            caiDatRows.forEach(row => {
                 const k = getVal(row, 'Thông số') || String(Object.values(row)[0] || '');
                 const v = getVal(row, 'Giá trị')  || String(Object.values(row)[1] || '');
-                if (k && v) CONFIG[k.trim()] = parseFloat(v);
+                if (k && v && !isNaN(parseFloat(v))) CONFIG[k.trim()] = parseFloat(v);
             });
-
-            initUI();
-            showStatus('✅ Đã tải dữ liệu thành công từ Google Sheets!', 'ok');
-        } catch (err) {
-            showStatus('❌ ' + err.message);
         }
+
+        initUI();
+        document.getElementById('connectedBar').classList.remove('hidden');
+        document.getElementById('setupCard').classList.add('hidden');
+    } catch (err) {
+        setLoading(false);
+        showError(err.message);
+        document.getElementById('setupCard').classList.remove('hidden');
+        const errEl = document.getElementById('setupError');
+        errEl.innerText = err.message;
+        errEl.classList.remove('hidden');
     }
+    setLoading(false);
+}
 
-    // ── LOAD TỪ FILE EXCEL ───────────────────────────────────────────────────
-
-    function getSheetData(workbook, keyword) {
-        const name = workbook.SheetNames.find(n => n.toUpperCase().includes(keyword.toUpperCase()));
-        return name ? XLSX.utils.sheet_to_json(workbook.Sheets[name], { defval: "" }) : [];
+async function connectSheets() {
+    const url = document.getElementById('ggUrl').value.trim();
+    const id = extractSheetId(url);
+    if (!id) {
+        document.getElementById('setupError').innerText = 'URL không hợp lệ.';
+        document.getElementById('setupError').classList.remove('hidden');
+        return;
     }
+    localStorage.setItem('sp_sheets_url', url);
+    await loadSheetsData(id);
+}
 
-    document.getElementById('fileInput').addEventListener('change', e => {
-        const file = e.target.files[0];
-        if (!file) return;
-        showStatus('⏳ Đang đọc file...', 'load');
-        const reader = new FileReader();
-        reader.onload = ev => {
-            try {
-                const wb = XLSX.read(ev.target.result, { type: 'array' });
-                DATA.ong  = getSheetData(wb, 'ONG');
-                DATA.ren  = getSheetData(wb, 'REN');
-                DATA.voAo = getSheetData(wb, 'VOAO');
-                DATA.bam  = getSheetData(wb, 'BAM');
-                const caiDatRaw = getSheetData(wb, 'CAI_DAT');
+function disconnect() {
+    localStorage.removeItem('sp_sheets_url');
+    document.getElementById('connectedBar').classList.add('hidden');
+    document.getElementById('setupCard').classList.remove('hidden');
+    document.getElementById('inputControls').classList.add('hidden');
+    document.getElementById('outputControls').classList.add('hidden');
+}
 
-                if (DATA.ong.length === 0 || DATA.ren.length === 0)
-                    throw new Error('Không tìm thấy sheet ỐNG hoặc REN trong file.');
+window.addEventListener('DOMContentLoaded', async () => {
+    const savedUrl = HARDCODED_SHEETS_URL || localStorage.getItem('sp_sheets_url');
+    if (savedUrl) {
+        const id = extractSheetId(savedUrl);
+        if (id) { await loadSheetsData(id); return; }
+    }
+    document.getElementById('setupCard').classList.remove('hidden');
+});
 
-                caiDatRaw.forEach(row => {
-                    const k = getVal(row, 'Thông số') || String(Object.values(row)[0] || '');
-                    const v = getVal(row, 'Giá trị')  || String(Object.values(row)[1] || '');
-                    if (k && v) CONFIG[k.trim()] = parseFloat(v);
-                });
+function initUI() {
+    const ongSelect = document.getElementById('ongSelect');
+    ongSelect.innerHTML = "";
+    DATA.ong.forEach(o => {
+        const ten = getVal(o, 'Loại ống', 'Loai ong', 'ten') || String(Object.values(o)[0] || '');
+        if (ten) ongSelect.add(new Option(ten, ten));
+    });
+    document.getElementById('inputControls').classList.remove('hidden');
+    document.getElementById('outputControls').classList.remove('hidden');
+    loadRenOptions();
+}
 
-                initUI();
-                showStatus('✅ Đã tải file thành công!', 'ok');
-            } catch (err) {
-                showStatus('❌ ' + err.message);
-            }
-        };
-        reader.readAsArrayBuffer(file);
+function loadRenOptions() {
+    const ongName = document.getElementById('ongSelect').value;
+    const sizeRaw = parseSize(ongName).replace(/"/g, '').trim();
+    const r1 = document.getElementById('ren1Select');
+    const r2 = document.getElementById('ren2Select');
+    const p1 = r1.value, p2 = r2.value;
+    r1.innerHTML = ""; r2.innerHTML = "";
+
+    let filtered = DATA.ren.filter(r => {
+        const coOng   = getVal(r, 'Cỡ ống', 'Co ong', 'Size') || String(Object.values(r)[0] || '');
+        const renSize = parseSize(coOng).replace(/"/g, '').trim();
+        return sizeRaw && renSize && renSize === sizeRaw;
+    });
+    if (filtered.length === 0) filtered = DATA.ren;
+
+    filtered.forEach(r => {
+        const name = getVal(r, 'Đầu ren', 'Dau ren', 'ten') || String(Object.values(r)[1] || '');
+        if (name) { r1.add(new Option(name, name)); r2.add(new Option(name, name)); }
     });
 
-    // ── KHỞI TẠO UI SAU KHI CÓ DATA ─────────────────────────────────────────
+    if ([...r1.options].some(o => o.value === p1)) r1.value = p1;
+    if ([...r2.options].some(o => o.value === p2)) r2.value = p2;
+    tinhToan();
+}
 
-    function initUI() {
-        const ongSelect = document.getElementById('ongSelect');
-        ongSelect.innerHTML = "";
-        DATA.ong.forEach(o => {
-            const ten = getVal(o, 'Loại ống', 'ten') || String(Object.values(o)[0] || '');
-            if (ten) ongSelect.add(new Option(ten, ten));
-        });
-        document.getElementById('inputControls').classList.remove('hidden');
-        document.getElementById('outputControls').classList.remove('hidden');
-        loadRenOptions();
+function tinhToan() {
+    if (DATA.ong.length === 0) return;
+    const ongName  = document.getElementById('ongSelect').value;
+    const ren1Name = document.getElementById('ren1Select').value;
+    const ren2Name = document.getElementById('ren2Select').value;
+    const met      = parseFloat(document.getElementById('metInput').value) || 0;
+    if (!ongName || !ren1Name || !ren2Name) return;
+
+    const ong = DATA.ong.find(o =>
+        (getVal(o,'Loại ống','Loai ong','ten') || String(Object.values(o)[0]||'')) === ongName) || {};
+    const giaVonOng = parseFloat(getVal(ong,'Giá vốn/m','Gia von/m','gia') || String(Object.values(ong)[1]||0)) || 0;
+    const tenVoAo   = getVal(ong,'Vỏ áo','Vo ao','vo') || String(Object.values(ong)[2]||'');
+
+    let giaVonVoAo = 0;
+    if (tenVoAo && DATA.voAo.length) {
+        const voAo = DATA.voAo.find(v => (getVal(v,'Vỏ áo','Vo ao') || String(Object.values(v)[0]||'')) === tenVoAo);
+        if (voAo) giaVonVoAo = parseFloat(getVal(voAo,'Giá vốn','Gia von') || String(Object.values(voAo)[1]||0)) || 0;
     }
 
-    // ── DROPDOWN REN ─────────────────────────────────────────────────────────
+    const findRen = name =>
+        DATA.ren.find(r => (getVal(r,'Đầu ren','Dau ren','ten') || String(Object.values(r)[1]||'')) === name) || {};
+    const giaVonRen1 = parseFloat(getVal(findRen(ren1Name),'Giá vốn','Gia von') || String(Object.values(findRen(ren1Name))[2]||0)) || 0;
+    const giaVonRen2 = parseFloat(getVal(findRen(ren2Name),'Giá vốn','Gia von') || String(Object.values(findRen(ren2Name))[2]||0)) || 0;
 
-    function loadRenOptions() {
-        const ongName  = document.getElementById('ongSelect').value;
-        const sizeRaw  = parseSize(ongName).replace(/"/g, '').trim();
-        const ren1Select = document.getElementById('ren1Select');
-        const ren2Select = document.getElementById('ren2Select');
-        const prev1 = ren1Select.value, prev2 = ren2Select.value;
+    let tsKhuon = "--", tsChinhSo = "--";
+    if (DATA.bam && DATA.bam.length > 0) {
+        const norm = s => s.toString().trim().toUpperCase().normalize('NFC');
+        const getBamName = b =>
+            norm(getVal(b,'Loại ống','Loai ong','Tên ống','Ten ong','Loại','Loai') || String(Object.values(b)[0]||''));
 
-        ren1Select.innerHTML = "";
-        ren2Select.innerHTML = "";
+        let bamMatch = DATA.bam.find(b => getBamName(b) === norm(ongName));
 
-        let filtered = DATA.ren.filter(r => {
-            const coOng  = getVal(r, 'Cỡ ống', 'Co ong', 'Size') || String(Object.values(r)[0] || '');
-            const renSize = parseSize(coOng).replace(/"/g, '').trim();
-            return sizeRaw !== "" && renSize !== "" && renSize === sizeRaw;
-        });
-        if (filtered.length === 0) filtered = DATA.ren;
-
-        filtered.forEach(r => {
-            const name = getVal(r, 'Đầu ren', 'ten') || String(Object.values(r)[1] || '');
-            if (name) {
-                ren1Select.add(new Option(name, name));
-                ren2Select.add(new Option(name, name));
+        if (!bamMatch) {
+            const sizeKey = parseSize(ongName).replace(/"/g,'').trim();
+            const typeM   = ongName.match(/(4SP|4SH|4AT|2AT|1AT|4\s*L[ỚớÔô]P|2\s*L[ỚớÔô]P|1\s*L[ỚớÔô]P)/i);
+            const typeKey = typeM ? typeM[0].replace(/\s+/g,'').toUpperCase().normalize('NFC') : "";
+            if (sizeKey) {
+                bamMatch = DATA.bam.find(b => {
+                    const bn = getBamName(b);
+                    return bn.includes(sizeKey.normalize('NFC')) &&
+                           (!typeKey || bn.replace(/\s+/g,'').includes(typeKey));
+                });
             }
-        });
-
-        if ([...ren1Select.options].some(o => o.value === prev1)) ren1Select.value = prev1;
-        if ([...ren2Select.options].some(o => o.value === prev2)) ren2Select.value = prev2;
-        tinhToan();
-    }
-
-    // ── TÍNH TOÁN ─────────────────────────────────────────────────────────────
-
-    function tinhToan() {
-        if (DATA.ong.length === 0) return;
-        const ongName  = document.getElementById('ongSelect').value;
-        const ren1Name = document.getElementById('ren1Select').value;
-        const ren2Name = document.getElementById('ren2Select').value;
-        const met      = parseFloat(document.getElementById('metInput').value) || 0;
-        if (!ongName || !ren1Name || !ren2Name) return;
-
-        const ong = DATA.ong.find(o =>
-            (getVal(o,'Loại ống','ten') || String(Object.values(o)[0]||'')) === ongName) || {};
-        const giaVonOng = parseFloat(getVal(ong,'Giá vốn/m','gia') || Object.values(ong)[1]) || 0;
-        const tenVoAo   = getVal(ong,'Vỏ áo','vo') || String(Object.values(ong)[2]||'');
-
-        let giaVonVoAo = 0;
-        if (tenVoAo) {
-            const voAo = DATA.voAo.find(v =>
-                (getVal(v,'Vỏ áo') || String(Object.values(v)[0]||'')) === tenVoAo);
-            if (voAo) giaVonVoAo = parseFloat(getVal(voAo,'Giá vốn') || Object.values(voAo)[1]) || 0;
+            if (!bamMatch && sizeKey)
+                bamMatch = DATA.bam.find(b => getBamName(b).includes(sizeKey.normalize('NFC')));
         }
 
-        const findRen = name =>
-            DATA.ren.find(r => (getVal(r,'Đầu ren','ten') || String(Object.values(r)[1]||'')) === name) || {};
-        const giaVonRen1 = parseFloat(getVal(findRen(ren1Name),'Giá vốn') || Object.values(findRen(ren1Name))[2]) || 0;
-        const giaVonRen2 = parseFloat(getVal(findRen(ren2Name),'Giá vốn') || Object.values(findRen(ren2Name))[2]) || 0;
-
-        // --- TÌM THÔNG SỐ BẤM ---
-        let tsKhuon = "--", tsChinhSo = "--";
-        if (DATA.bam && DATA.bam.length > 0) {
-            const norm = s => s.toString().trim().toUpperCase().normalize('NFC');
-            const getBamName = b =>
-                norm(getVal(b,'Loại ống','Tên ống','Loại') || String(Object.values(b)[0]||''));
-
-            // Bước 1: khớp chính xác
-            let bamMatch = DATA.bam.find(b => getBamName(b) === norm(ongName));
-
-            // Bước 2: khớp size + type
-            if (!bamMatch) {
-                const sizeKey = parseSize(ongName).replace(/"/g,'').trim();
-                const typeM   = ongName.match(/(4SP|4SH|4AT|2AT|1AT|4\s*L[ỚớÔô]P|2\s*L[ỚớÔô]P|1\s*L[ỚớÔô]P)/i);
-                const typeKey = typeM ? typeM[0].replace(/\s+/g,'').toUpperCase().normalize('NFC') : "";
-                if (sizeKey) {
-                    bamMatch = DATA.bam.find(b => {
-                        const bn = getBamName(b);
-                        return bn.includes(sizeKey.normalize('NFC')) &&
-                               (!typeKey || bn.replace(/\s+/g,'').includes(typeKey));
-                    });
+        if (bamMatch) {
+            const findByKey = (row, ...pats) => {
+                for (const [k, v] of Object.entries(row)) {
+                    const kn = k.normalize('NFC').toLowerCase();
+                    if (pats.some(p => kn.includes(p.normalize('NFC').toLowerCase())) && v !== "")
+                        return String(v);
                 }
-                // Bước 3: fallback size only
-                if (!bamMatch && sizeKey)
-                    bamMatch = DATA.bam.find(b => getBamName(b).includes(sizeKey.normalize('NFC')));
-            }
-
-            if (bamMatch) {
-                const findByKey = (row, ...pats) => {
-                    for (const [k, v] of Object.entries(row)) {
-                        const kn = k.normalize('NFC').toLowerCase();
-                        if (pats.some(p => kn.includes(p.normalize('NFC').toLowerCase())) && v !== "")
-                            return String(v);
-                    }
-                    return "";
-                };
-                const keys = Object.keys(bamMatch);
-                tsKhuon   = findByKey(bamMatch,'khu') || bamMatch[keys[1]] || "--";
-                tsChinhSo = findByKey(bamMatch,'chỉnh','chinh') ||
-                            findByKey(bamMatch,'số','so') ||
-                            bamMatch[keys[2]] || "--";
-            }
+                return "";
+            };
+            const keys = Object.keys(bamMatch);
+            tsKhuon   = findByKey(bamMatch,'khu') || bamMatch[keys[1]] || "--";
+            tsChinhSo = findByKey(bamMatch,'chỉnh','chinh') ||
+                        findByKey(bamMatch,'số','so') ||
+                        bamMatch[keys[2]] || "--";
         }
-
-        document.getElementById('khuonDisplay').innerText  = tsKhuon;
-        document.getElementById('chinhSoDisplay').innerText = tsChinhSo;
-
-        const giaOngBan   = giaVonOng * met * CONFIG.HE_SO_ONG;
-        const giaRenBan   = (giaVonRen1 + giaVonRen2) * CONFIG.HE_SO_REN;
-        const giaVoAoBan  = giaVonVoAo * 2 * CONFIG.HE_SO_VOAO;
-        const giaBanRaw   = giaOngBan + giaRenBan + giaVoAoBan + CONFIG.CONG_BAM;
-        const giaBaoKhach = Math.ceil(giaBanRaw / 5000) * 5000;
-
-        document.getElementById('ketQua').innerText = `${giaBaoKhach.toLocaleString('vi-VN')} đ`;
-        document.getElementById('chiTiet').innerHTML = `
-            <div class="flex justify-between border-b border-gray-200 pb-1.5"><span>1. Tiền Ống:</span><b>${giaOngBan.toLocaleString('vi-VN')} đ</b></div>
-            <div class="flex justify-between border-b border-gray-200 pb-1.5"><span>2. Đầu ren (2 cái):</span><b>${giaRenBan.toLocaleString('vi-VN')} đ</b></div>
-            <div class="flex justify-between border-b border-gray-200 pb-1.5"><span>3. Vỏ áo (2 cái):</span><b>${giaVoAoBan.toLocaleString('vi-VN')} đ</b></div>
-            <div class="flex justify-between pt-1"><span>4. Công bấm:</span><b>${CONFIG.CONG_BAM.toLocaleString('vi-VN')} đ</b></div>
-        `;
-        window.baoGiaText =
-            `KIM KHÍ ĐIỆN MÁY SƠN PHƯỢNG\n--- BÁO GIÁ THỦY LỰC ---\n\n` +
-            `ỐNG: ${ongName}\nCHIỀU DÀI: ${met} mét\nREN 1: ${ren1Name}\nREN 2: ${ren2Name}\n\n` +
-            `=> TỔNG THÀNH TIỀN: ${giaBaoKhach.toLocaleString('vi-VN')} đ\n` +
-            `(Đã bao gồm công bấm và vỏ áo)\nCảm ơn quý khách!`;
     }
 
-    function copyBaoGia() {
-        if (!window.baoGiaText) return;
-        navigator.clipboard.writeText(window.baoGiaText).then(() => {
-            const toast = document.getElementById('toast');
-            toast.classList.remove('translate-y-20','opacity-0');
-            setTimeout(() => toast.classList.add('translate-y-20','opacity-0'), 2500);
-        }).catch(() => alert("Không thể copy, vui lòng thử lại!"));
-    }
+    document.getElementById('khuonDisplay').innerText   = tsKhuon;
+    document.getElementById('chinhSoDisplay').innerText = tsChinhSo;
+
+    const giaOngBan   = giaVonOng * met * CONFIG.HE_SO_ONG;
+    const giaRenBan   = (giaVonRen1 + giaVonRen2) * CONFIG.HE_SO_REN;
+    const giaVoAoBan  = giaVonVoAo * 2 * CONFIG.HE_SO_VOAO;
+    const giaBanRaw   = giaOngBan + giaRenBan + giaVoAoBan + CONFIG.CONG_BAM;
+    const giaBaoKhach = Math.ceil(giaBanRaw / 5000) * 5000;
+
+    document.getElementById('ketQua').innerText = `${giaBaoKhach.toLocaleString('vi-VN')} đ`;
+    document.getElementById('chiTiet').innerHTML = `
+        <div class="flex justify-between border-b pb-1.5"><span>1. Tiền Ống:</span><b>${giaOngBan.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between border-b pb-1.5"><span>2. Đầu ren (2 cái):</span><b>${giaRenBan.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between border-b pb-1.5"><span>3. Vỏ áo (2 cái):</span><b>${giaVoAoBan.toLocaleString('vi-VN')} đ</b></div>
+        <div class="flex justify-between pt-1"><span>4. Công bấm:</span><b>${CONFIG.CONG_BAM.toLocaleString('vi-VN')} đ</b></div>
+    `;
+    window.baoGiaText =
+        `KIM KHÍ ĐIỆN MÁY SƠN PHƯỢNG\n--- BÁO GIÁ THỦY LỰC ---\n\n` +
+        `ỐNG: ${ongName}\nCHIỀU DÀI: ${met} mét\nREN 1: ${ren1Name}\nREN 2: ${ren2Name}\n\n` +
+        `=> TỔNG THÀNH TIỀN: ${giaBaoKhach.toLocaleString('vi-VN')} đ\n` +
+        `(Đã bao gồm công bấm và vỏ áo)\nCảm ơn quý khách!`;
+}
+
+function copyBaoGia() {
+    if (!window.baoGiaText) return;
+    navigator.clipboard.writeText(window.baoGiaText).then(() => {
+        const t = document.getElementById('toast');
+        t.classList.remove('translate-y-20','opacity-0');
+        setTimeout(() => t.classList.add('translate-y-20','opacity-0'), 2500);
+    }).catch(() => alert("Không thể copy!"));
+}
 </script>
 </body>
 </html>
